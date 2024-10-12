@@ -1,4 +1,4 @@
-import { Attribute, Device, Provider, SelectAttribute } from 'quantumhub-sdk';
+import { Attribute, BaseAttributeWithState, Device, Provider, SelectAttribute } from 'quantumhub-sdk';
 import { IAPI } from './api/iapi';
 import { ModbusAPI } from './api/modbus/modbus-api';
 import { Solarman } from './api/solarman/solarman';
@@ -119,8 +119,10 @@ class ModbusSolarman implements Device {
     const result = parseConfiguration.calculateValue(value, buffer, this.provider.logger);
 
     const validationResult = parseConfiguration.validateValue(result, this.provider.logger);
-    if (validationResult.valid) {
-      await this.provider.setAttributeValue(parseConfiguration.capabilityId, result);
+    const attribute = this.provider.getAttribute(parseConfiguration.capabilityId) as BaseAttributeWithState;
+
+    if (validationResult.valid && attribute) {
+      await this.provider.setAttributeState(attribute, { state: result });
       parseConfiguration.currentValue = result;
     } else {
       this.provider.logger.error('Invalid value received', value, buffer);
