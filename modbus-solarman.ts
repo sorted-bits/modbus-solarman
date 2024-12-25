@@ -30,6 +30,9 @@ class ModbusSolarman implements Device {
     const { unavailable_timeout } = this.provider.getConfig();
     if (this.lastSuccessfullRead) {
       const diff = DateTime.now().diff(this.lastSuccessfullRead, 'seconds').seconds;
+
+      this.provider.logger.trace('isAvailable', this.lastSuccessfullRead, diff, unavailable_timeout);
+
       return (diff < (unavailable_timeout ?? DEFAULT_UNAVAILABLE_TIMEOUT));
     }
     return false;
@@ -45,10 +48,8 @@ class ModbusSolarman implements Device {
     if (!this.isAvailable && this.lastReconnect) {
       const diff = DateTime.now().diff(this.lastReconnect, 'minutes').minutes;
       if (diff === (unavailable_reconnect_timeout ?? DEFAULT_UNAVAILABLE_RECONNECT_TIMEOUT)) {
-
         reconnecting = true;
         await this.reconnect();
-
       }
     }
 
