@@ -7,6 +7,9 @@ import { ModbusDevice } from './repositories/device-repository/models/modbus-dev
 import { ModbusRegister, ModbusRegisterParseConfiguration } from './repositories/device-repository/models/modbus-register';
 import { DateTime } from 'luxon';
 
+const DEFAULT_UNAVAILABLE_TIMEOUT = 180; // 3 minutes of no data marks the device as unavailable
+const DEFAULT_UNAVAILABLE_RECONNECT_TIMEOUT = 21600 // 6 hours of no data reconnects the device
+
 class ModbusSolarman implements Device {
   private provider!: Provider;
 
@@ -19,28 +22,48 @@ class ModbusSolarman implements Device {
   private readRegisterTimeout: undefined | ReturnType<typeof setTimeout>;
   private availabilityTimeoutId: undefined | ReturnType<typeof setTimeout>;
 
-  private lastSuccessfullRead?: DateTime
+  private lastSuccessfullRead?: DateTime;
+  private lastReconnect?: DateTime;
 
   get isAvailable(): boolean {
     const { unavailable_timeout } = this.provider.getConfig();
     if (this.lastSuccessfullRead) {
       const diff = DateTime.now().diff(this.lastSuccessfullRead, 'seconds').seconds;
-      return (diff < (unavailable_timeout ?? 180));
+      return (diff < (unavailable_timeout ?? DEFAULT_UNAVAILABLE_TIMEOUT));
     }
     return false;
   }
 
   availabilityTimeout = async () => {
+    const { unavailable_reconnect_timeout } = this.provider.getConfig();
+
+    let reconnecting = false;
+
     await this.setAvailability(this.isAvailable);
 
-    this.availabilityTimeoutId = this.provider.timeout.set(async () => {
-      await this.availabilityTimeout();
-    }, 5000)
+    if (!this.isAvailable && this.lastReconnect) {
+      const diff = DateTime.now().diff(this.lastReconnect, 'minutes').minutes;
+      if (diff === (unavailable_reconnect_timeout ?? DEFAULT_UNAVAILABLE_RECONNECT_TIMEOUT)) {
+
+        reconnecting = true;
+        await this.reconnect();
+
+      }
+    }
+
+    if (!reconnecting) {
+      this.availabilityTimeoutId = this.provider.timeout.set(async () => {
+        await this.availabilityTimeout();
+      }, 5000);
+    }
   }
 
-updateLastSuccesfullRead = async () => {
+  updateLastSuccesfullRead = async () => {
     this.lastSuccessfullRead = DateTime.now();
+    this.lastReconnect = DateTime.now();
+
     this.provider.cache.set('lastSuccessfullRead', this.lastSuccessfullRead.toISO())
+    this.provider.cache.set('lastReconnect', this.lastReconnect.toISO());
   }
 
   init = async (provider: Provider): Promise<boolean> => {
@@ -155,7 +178,7 @@ updateLastSuccesfullRead = async () => {
     await this.updateLastSuccesfullRead();
   };
 
-  private onDisconnect = async (): Promise<void> => {
+  private onDisconnect = async (reconnect: boolean = true): Promise<void> => {
     this.provider.logger.warn('Disconnected');
 
     if (this.readRegisterTimeout) {
@@ -167,14 +190,16 @@ updateLastSuccesfullRead = async () => {
       return;
     }
 
-    const isOpen = this.api.connect();
+    if (reconnect) {
+      const isOpen = this.api.connect();
 
-    if (!isOpen) {
-      this.provider.logger.error('Failed to reconnect, reconnecting in 60 seconds');
-      this.readRegisterTimeout = await this.provider.timeout.set(this.onDisconnect.bind(this), 60000);
-    } else {
-      this.provider.logger.trace('Reconnected to device');
-      await this.readRegisters();
+      if (!isOpen) {
+        this.provider.logger.error('Failed to reconnect, reconnecting in 60 seconds');
+        this.readRegisterTimeout = await this.provider.timeout.set(this.onDisconnect.bind(this), 60000);
+      } else {
+        this.provider.logger.trace('Reconnected to device');
+        await this.readRegisters();
+      }
     }
   };
 
@@ -226,6 +251,8 @@ updateLastSuccesfullRead = async () => {
 
   connect = async (): Promise<void> => {
     this.runningRequest = false;
+    this.isStopping = false;
+    this.lastReconnect = DateTime.now();
 
     const { host, port, unitId, solarman, serial } = this.provider.getConfig();
 
@@ -247,6 +274,12 @@ updateLastSuccesfullRead = async () => {
       await this.readRegisters();
     }
   };
+
+  reconnect = async (): Promise<void> => {
+    await this.cleanUp();
+    await this.connect();
+    await this.availabilityTimeout();
+  }
 }
 
 export default ModbusSolarman;
