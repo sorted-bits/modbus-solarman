@@ -25,7 +25,7 @@ class ModbusSolarman implements Device {
     const { unavailable_timeout } = this.provider.getConfig();
     if (this.lastSuccessfullRead) {
       const diff = DateTime.now().diff(this.lastSuccessfullRead, 'seconds').seconds;
-      return (diff < unavailable_timeout);
+      return (diff < (unavailable_timeout ?? 180));
     }
     return false;
   }
@@ -38,7 +38,7 @@ class ModbusSolarman implements Device {
     }, 5000)
   }
 
-  updateLastSuccesfullRead = async () => {
+updateLastSuccesfullRead = async () => {
     this.lastSuccessfullRead = DateTime.now();
     this.provider.cache.set('lastSuccessfullRead', this.lastSuccessfullRead.toISO())
   }
@@ -191,7 +191,7 @@ class ModbusSolarman implements Device {
 
     this.provider.logger.trace('Reading registers');
 
-    const { updateInterval, unavailable_timeout } = this.provider.getConfig();
+    const { updateInterval } = this.provider.getConfig();
 
     if (this.runningRequest) {
       this.readRegisterTimeout = this.provider.timeout.set(this.readRegisters.bind(this), 500);
@@ -203,12 +203,8 @@ class ModbusSolarman implements Device {
     try {
       await this.api.readRegistersInBatch();
     } catch (error: Error | any) {
-      const currentTime = DateTime.now();
-
       if (error.name === 'TransactionTimedOutError') {
-        if (!this.lastSuccessfullRead) {
-          this.lastSuccessfullRead = DateTime.now();
-        }
+        this.provider.logger.warn('Transaction timed out');
       } else {
         this.provider.logger.error('Failed to read registers', JSON.stringify(error));
       }
