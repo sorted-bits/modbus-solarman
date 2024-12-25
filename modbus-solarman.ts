@@ -30,10 +30,9 @@ class ModbusSolarman implements Device {
     const { unavailable_timeout } = this.provider.getConfig();
     if (this.lastSuccessfullRead) {
       const diff = DateTime.now().diff(this.lastSuccessfullRead, 'seconds').seconds;
-
-      this.provider.logger.trace('isAvailable', this.lastSuccessfullRead, diff, unavailable_timeout);
-
-      return (diff < (unavailable_timeout ?? DEFAULT_UNAVAILABLE_TIMEOUT));
+      const result = (diff < (unavailable_timeout ?? DEFAULT_UNAVAILABLE_TIMEOUT));
+      this.provider.logger.trace('isAvailable', this.lastSuccessfullRead, diff, unavailable_timeout, result);
+      return result;
     }
     return false;
   }
