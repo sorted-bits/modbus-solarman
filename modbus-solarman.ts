@@ -42,7 +42,7 @@ class ModbusSolarman implements Device {
 
     let reconnecting = false;
 
-    await this.setAvailability(this.isAvailable);
+    await this.setAvailability(this.isAvailable, true);
 
     if (!this.isAvailable && this.lastReconnect) {
       const diff = DateTime.now().diff(this.lastReconnect, 'minutes').minutes;
@@ -102,7 +102,6 @@ class ModbusSolarman implements Device {
   setAvailability = async (availability: boolean, force: boolean = false): Promise<void> => {
     if (this.availability !== availability || force) {
       this.provider.logger.info('Setting availability:', availability);
-
       this.availability = availability;
       await this.provider.setAvailability(this.availability);
     }
