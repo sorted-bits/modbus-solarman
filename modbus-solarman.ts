@@ -6,6 +6,7 @@ import { DeviceRepository } from './repositories/device-repository/device-reposi
 import { ModbusDevice } from './repositories/device-repository/models/modbus-device';
 import { ModbusRegister, ModbusRegisterParseConfiguration } from './repositories/device-repository/models/modbus-register';
 import { DateTime } from 'luxon';
+import { delay } from './helpers/delay';
 
 const DEFAULT_UNAVAILABLE_TIMEOUT = 180; // 3 minutes of no data marks the device as unavailable
 const DEFAULT_UNAVAILABLE_RECONNECT_TIMEOUT = 21600 // 6 hours of no data reconnects the device
@@ -152,6 +153,12 @@ class ModbusSolarman implements Device {
       this.provider.logger.trace('Closing modbus connection');
       this.api.disconnect();
     }
+
+    this.provider.logger.trace('cleanUp: Waiting for runningRequest to turn false');
+    while (this.runningRequest) {
+      await delay(1000);
+    }
+    this.provider.logger.trace('cleanUp: runningRequest is false');
   };
 
   private onError = async (error: unknown, register: ModbusRegister): Promise<void> => {
@@ -181,9 +188,16 @@ class ModbusSolarman implements Device {
   private onDisconnect = async (reconnect: boolean = true): Promise<void> => {
     this.provider.logger.warn('Disconnected');
 
+    this.isStopping = true;
+
     if (this.readRegisterTimeout) {
       this.provider.timeout.clear(this.readRegisterTimeout);
       this.readRegisterTimeout = undefined;
+    }
+
+    while (this.runningRequest) {
+      this.provider.logger.trace('onDisconnect: Waiting for runningRequest to turn false');
+      await delay(1000);
     }
 
     if (!this.api) {
@@ -191,6 +205,8 @@ class ModbusSolarman implements Device {
     }
 
     if (reconnect) {
+      this.isStopping = false;
+
       const isOpen = this.api.connect();
 
       if (!isOpen) {
@@ -218,10 +234,11 @@ class ModbusSolarman implements Device {
 
     const { updateInterval } = this.provider.getConfig();
 
-    if (this.runningRequest) {
-      this.readRegisterTimeout = this.provider.timeout.set(this.readRegisters.bind(this), 500);
-      return;
+    this.provider.logger.trace('readRegisters: waiting for runningRequest to turn false');
+    while (this.runningRequest) {
+      await delay(1000);
     }
+    this.provider.logger.trace('readRegisters: runningRequest is false');
 
     this.runningRequest = true;
 
@@ -277,7 +294,9 @@ class ModbusSolarman implements Device {
 
   reconnect = async (): Promise<void> => {
     await this.cleanUp();
+
     await this.connect();
+
     await this.availabilityTimeout();
   }
 }
