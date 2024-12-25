@@ -95,7 +95,6 @@ class ModbusSolarman implements Device {
       await this.updateLastSuccesfullRead();
     }
 
-    this.availabilityTimeout();
 
     return true;
   };
@@ -276,6 +275,11 @@ class ModbusSolarman implements Device {
     if (this.readRegisterTimeout) {
       this.provider.timeout.clear(this.readRegisterTimeout);
     }
+
+    if (this.availabilityTimeoutId) {
+      this.provider.timeout.clear(this.availabilityTimeoutId);
+    }
+    this.availabilityTimeout();
 
     this.provider.logger.trace(`Connecting to ${host}:${port} with unitId ${unitId} (solarman: ${solarman}, serial: ${serial})`);
 
