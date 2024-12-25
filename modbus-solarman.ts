@@ -300,8 +300,6 @@ class ModbusSolarman implements Device {
     await this.cleanUp();
 
     await this.connect();
-
-    await this.availabilityTimeout();
   }
 }
 
