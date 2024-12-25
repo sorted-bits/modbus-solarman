@@ -17,11 +17,36 @@ class ModbusSolarman implements Device {
   private isStopping: boolean = false;
 
   private readRegisterTimeout: undefined | ReturnType<typeof setTimeout>;
+  private availabilityTimeoutId: undefined | ReturnType<typeof setTimeout>;
 
   private lastSuccessfullRead?: DateTime
 
+  get isAvailable(): boolean {
+    const { unavailable_timeout } = this.provider.getConfig();
+    if (this.lastSuccessfullRead) {
+      const diff = DateTime.now().diff(this.lastSuccessfullRead, 'seconds').seconds;
+      return (diff < unavailable_timeout);
+    }
+    return false;
+  }
+
+  availabilityTimeout = async () => {
+    await this.setAvailability(this.isAvailable);
+
+    this.availabilityTimeoutId = this.provider.timeout.set(async () => {
+      await this.availabilityTimeout();
+    }, 5000)
+  }
+
+  updateLastSuccesfullRead = async () => {
+    this.lastSuccessfullRead = DateTime.now();
+    this.provider.cache.set('lastSuccessfullRead', this.lastSuccessfullRead.toISO())
+  }
+
   init = async (provider: Provider): Promise<boolean> => {
     this.provider = provider;
+
+    await this.setAvailability(this.isAvailable, true);
 
     const { device } = this.provider.getConfig();
 
@@ -34,35 +59,29 @@ class ModbusSolarman implements Device {
 
     this.provider.logger.trace('Initializing ', this.device.name);
 
-    this.setAvailability(true);
-
     const { lastSuccessfullRead } = await this.provider.cache.all();
     if (lastSuccessfullRead) {
       this.lastSuccessfullRead = DateTime.fromISO(lastSuccessfullRead);
       if (!this.lastSuccessfullRead.isValid) {
         this.provider.logger.error('Could not parse lastSuccessfullRead from cache', lastSuccessfullRead);
         this.lastSuccessfullRead = undefined;
-      } else {
-        const { unavailable_timeout } = this.provider.getConfig();
-
-        const diff = DateTime.now().diff(this.lastSuccessfullRead, 'seconds').seconds;
-        this.provider.logger.trace(`Last successful read was ${Math.round(diff)} seconds ago, marking device as unavailable after ${unavailable_timeout} seconds`);
-
-        if (diff > unavailable_timeout) {
-          await this.setAvailability(false);
-        }
       }
+    } else {
+      this.provider.logger.warn('No `lastSuccessFullRead` found in cache');
+      await this.updateLastSuccesfullRead();
     }
+
+    this.availabilityTimeout();
 
     return true;
   };
 
-  setAvailability = async (availability: boolean): Promise<void> => {
-    if (this.availability !== availability) {
+  setAvailability = async (availability: boolean, force: boolean = false): Promise<void> => {
+    if (this.availability !== availability || force) {
       this.provider.logger.info('Setting availability:', availability);
 
       this.availability = availability;
-      this.provider.setAvailability(this.availability);
+      await this.provider.setAvailability(this.availability);
     }
   };
 
@@ -101,6 +120,11 @@ class ModbusSolarman implements Device {
       this.readRegisterTimeout = undefined;
     }
 
+    if (this.availabilityTimeoutId) {
+      this.provider.timeout.clear(this.availabilityTimeoutId);
+      this.availabilityTimeoutId = undefined;
+    }
+
     if (this.api?.isConnected()) {
       this.provider.logger.trace('Closing modbus connection');
       this.api.disconnect();
@@ -128,10 +152,7 @@ class ModbusSolarman implements Device {
       this.provider.logger.error('Invalid value received', value, buffer);
     }
 
-    this.lastSuccessfullRead = DateTime.now();
-    this.provider.cache.set('lastSuccessfullRead', this.lastSuccessfullRead.toISO());
-
-    await this.setAvailability(true);
+    await this.updateLastSuccesfullRead();
   };
 
   private onDisconnect = async (): Promise<void> => {
@@ -150,13 +171,9 @@ class ModbusSolarman implements Device {
 
     if (!isOpen) {
       this.provider.logger.error('Failed to reconnect, reconnecting in 60 seconds');
-
-      await this.provider.setAvailability(false);
-
       this.readRegisterTimeout = await this.provider.timeout.set(this.onDisconnect.bind(this), 60000);
     } else {
       this.provider.logger.trace('Reconnected to device');
-      await this.provider.setAvailability(true);
       await this.readRegisters();
     }
   };
@@ -185,7 +202,6 @@ class ModbusSolarman implements Device {
 
     try {
       await this.api.readRegistersInBatch();
-      await this.setAvailability(true);
     } catch (error: Error | any) {
       const currentTime = DateTime.now();
 
@@ -193,23 +209,15 @@ class ModbusSolarman implements Device {
         if (!this.lastSuccessfullRead) {
           this.lastSuccessfullRead = DateTime.now();
         }
-
-        const diff = currentTime.diff(this.lastSuccessfullRead, 'seconds').seconds;
-        this.provider.logger.trace(`Last successful read was ${Math.round(diff)} seconds ago, marking device as unavailable after ${unavailable_timeout} seconds`);
-
-        if (diff > unavailable_timeout) {
-          await this.setAvailability(false);
-        }
       } else {
         this.provider.logger.error('Failed to read registers', JSON.stringify(error));
-        await this.setAvailability(false);
       }
     } finally {
       this.runningRequest = false;
 
-      const interval = this.availability ? Math.max(updateInterval, 2) * 1000 : 60000;
+      const interval = this.isAvailable ? Math.max(updateInterval, 2) * 1000 : 60000;
 
-      if (!this.availability) {
+      if (!this.isAvailable) {
         this.provider.logger.warn('Device is not reachable, retrying in 60 seconds');
       }
 
@@ -240,7 +248,6 @@ class ModbusSolarman implements Device {
     const isOpen = await this.api.connect();
 
     if (isOpen) {
-      this.setAvailability(true);
       await this.readRegisters();
     }
   };
