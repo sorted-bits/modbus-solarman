@@ -24,7 +24,7 @@ class ModbusSolarman implements Device {
   private availabilityTimeoutId: undefined | ReturnType<typeof setTimeout>;
 
   private lastSuccessfullRead?: DateTime;
-  private lastReconnect?: DateTime;
+  private lastRestart?: DateTime;
 
   get isAvailable(): boolean {
     const { unavailable_timeout } = this.provider.getConfig();
@@ -40,19 +40,22 @@ class ModbusSolarman implements Device {
   availabilityTimeout = async () => {
     const { unavailable_reconnect_timeout } = this.provider.getConfig();
 
-    let reconnecting = false;
+    let restarting = false;
 
     await this.setAvailability(this.isAvailable, true);
 
-    if (!this.isAvailable && this.lastReconnect) {
-      const diff = DateTime.now().diff(this.lastReconnect, 'minutes').minutes;
+    if (!this.isAvailable && this.lastRestart) {
+
+      const diff = DateTime.now().diff(this.lastRestart, 'minutes').minutes;
+
       if (diff === (unavailable_reconnect_timeout ?? DEFAULT_UNAVAILABLE_RECONNECT_TIMEOUT)) {
-        reconnecting = true;
-        await this.reconnect();
+        restarting = true;
+        await this.provider.restart();
       }
+
     }
 
-    if (!reconnecting) {
+    if (!restarting) {
       this.availabilityTimeoutId = this.provider.timeout.set(async () => {
         await this.availabilityTimeout();
       }, 5000);
@@ -61,10 +64,10 @@ class ModbusSolarman implements Device {
 
   updateLastSuccesfullRead = async () => {
     this.lastSuccessfullRead = DateTime.now();
-    this.lastReconnect = DateTime.now();
+    this.lastRestart = DateTime.now();
 
     this.provider.cache.set('lastSuccessfullRead', this.lastSuccessfullRead.toISO())
-    this.provider.cache.set('lastReconnect', this.lastReconnect.toISO());
+    this.provider.cache.set('lastReconnect', this.lastRestart.toISO());
   }
 
   init = async (provider: Provider): Promise<boolean> => {
@@ -267,7 +270,7 @@ class ModbusSolarman implements Device {
   connect = async (): Promise<void> => {
     this.runningRequest = false;
     this.isStopping = false;
-    this.lastReconnect = DateTime.now();
+    this.lastRestart = DateTime.now();
 
     const { host, port, unitId, solarman, serial } = this.provider.getConfig();
 
@@ -294,12 +297,6 @@ class ModbusSolarman implements Device {
       await this.readRegisters();
     }
   };
-
-  reconnect = async (): Promise<void> => {
-    await this.cleanUp();
-
-    await this.connect();
-  }
 }
 
 export default ModbusSolarman;

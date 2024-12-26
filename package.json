@@ -24,7 +24,7 @@
     "typescript-eslint": "^8.4.0"
   },
   "dependencies": {
-    "quantumhub-sdk": "1.7.0-beta.3",
+    "quantumhub-sdk": "1.7.2",
     "modbus-serial": "8.0.17",
     "node-fetch": "2.7.0",
     "luxon": "3.4.4"
