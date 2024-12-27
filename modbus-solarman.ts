@@ -121,6 +121,12 @@ class ModbusSolarman implements Device {
 
     this.provider.logger.info('Starting ModbusSolarman');
 
+    if (this.availabilityTimeoutId) {
+      this.provider.timeout.clear(this.availabilityTimeoutId);
+    }
+
+    this.availabilityTimeout();
+
     await this.readRegisters();
   };
 
