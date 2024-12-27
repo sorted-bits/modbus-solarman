@@ -23,3 +23,16 @@ export interface IAPI {
   writeBufferRegister(register: ModbusRegister, buffer: Buffer): Promise<boolean>;
   writeBitsToRegister(register: ModbusRegister, bits: number[], bitIndex: number): Promise<boolean>;
 }
+
+export interface RegisterOutput {
+  register: ModbusRegister;
+  value: any;
+  buffer: Buffer;
+  parseConfiguration: ModbusRegisterParseConfiguration;
+}
+
+export interface IAPI2 {
+  getDevice(): ModbusDevice;
+
+  readRegisters(): Promise<Array<RegisterOutput>>;
+}

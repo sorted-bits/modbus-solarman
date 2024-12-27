@@ -1,5 +1,5 @@
 import { Attribute, BaseAttributeWithState, Device, Provider, SelectAttribute } from 'quantumhub-sdk';
-import { IAPI, IAPI2, RegisterOutput } from './api/iapi';
+import { IAPI } from './api/iapi';
 import { ModbusAPI } from './api/modbus/modbus-api';
 import { Solarman } from './api/solarman/solarman';
 import { DeviceRepository } from './repositories/device-repository/device-repository';
@@ -7,7 +7,6 @@ import { ModbusDevice } from './repositories/device-repository/models/modbus-dev
 import { ModbusRegister, ModbusRegisterParseConfiguration } from './repositories/device-repository/models/modbus-register';
 import { DateTime } from 'luxon';
 import { delay } from './helpers/delay';
-import { ModbusAPI2 } from './api/modbus/modbus-api2';
 
 const DEFAULT_UNAVAILABLE_TIMEOUT = 180; // 3 minutes of no data marks the device as unavailable
 const DEFAULT_UNAVAILABLE_RECONNECT_TIMEOUT = 21600 // 6 hours of no data reconnects the device
@@ -15,7 +14,7 @@ const DEFAULT_UNAVAILABLE_RECONNECT_TIMEOUT = 21600 // 6 hours of no data reconn
 class ModbusSolarman implements Device {
   private provider!: Provider;
 
-  private api?: IAPI2;
+  private api?: IAPI;
   private availability: boolean = false;
   private device!: ModbusDevice;
   private runningRequest: boolean = false;
@@ -74,7 +73,7 @@ class ModbusSolarman implements Device {
 
     await this.setAvailability(this.isAvailable, true);
 
-    const { device, host, port, unitId, solarman, serial } = this.provider.getConfig();
+    const { device } = this.provider.getConfig();
 
     this.device = DeviceRepository.getInstance().getDeviceById(device) as ModbusDevice;
 
@@ -85,13 +84,6 @@ class ModbusSolarman implements Device {
 
     this.provider.logger.trace('Initializing ', this.device.name);
 
-    this.api = new ModbusAPI2(device, {
-      host,
-      port,
-      unitId,
-    }, this.provider.logger);
-
-    /*
     const { lastSuccessfullRead } = await this.provider.cache.all();
     if (lastSuccessfullRead) {
       this.lastSuccessfullRead = DateTime.fromISO(lastSuccessfullRead);
@@ -103,7 +95,7 @@ class ModbusSolarman implements Device {
       this.provider.logger.warn('No `lastSuccessFullRead` found in cache');
       await this.updateLastSuccesfullRead();
     }
-    */
+
 
     return true;
   };
@@ -121,7 +113,7 @@ class ModbusSolarman implements Device {
 
     this.provider.logger.info('Starting ModbusSolarman');
 
-    await this.readRegisters();
+    await this.connect();
   };
 
   onSelectChanged = async (attribute: SelectAttribute, value: string): Promise<void> => {
@@ -156,6 +148,11 @@ class ModbusSolarman implements Device {
       this.availabilityTimeoutId = undefined;
     }
 
+    if (this.api?.isConnected()) {
+      this.provider.logger.trace('Closing modbus connection');
+      this.api.disconnect();
+    }
+
     this.provider.logger.trace('cleanUp: Waiting for runningRequest to turn false');
     while (this.runningRequest) {
       await delay(1000);
@@ -163,27 +160,63 @@ class ModbusSolarman implements Device {
     this.provider.logger.trace('cleanUp: runningRequest is false');
   };
 
-  private handleResults = async (registerValues: RegisterOutput[]) => {
-    for (const registerValue of registerValues) {
-      const parseConfiguration = registerValue.parseConfiguration;
+  private onError = async (error: unknown, register: ModbusRegister): Promise<void> => {
+    if (error && (error as any)['name'] && (error as any)['name'] === 'TransactionTimedOutError') {
+      await this.setAvailability(false);
+    } else {
+      this.provider.logger.error('Request failed', error);
+    }
+  };
 
-      const result = parseConfiguration.calculateValue(registerValue.value, registerValue.buffer, this.provider.logger);
+  private onDataReceived = async (value: any, buffer: Buffer, parseConfiguration: ModbusRegisterParseConfiguration) => {
+    const result = parseConfiguration.calculateValue(value, buffer, this.provider.logger);
 
-      const validationResult = parseConfiguration.validateValue(result, this.provider.logger);
-      const attribute = this.provider.getAttribute(parseConfiguration.capabilityId) as BaseAttributeWithState;
+    const validationResult = parseConfiguration.validateValue(result, this.provider.logger);
+    const attribute = this.provider.getAttribute(parseConfiguration.capabilityId) as BaseAttributeWithState;
 
-      if (validationResult.valid && attribute) {
-        await this.provider.setAttributeState(attribute, { state: result });
-        parseConfiguration.currentValue = result;
+    if (validationResult.valid && attribute) {
+      await this.provider.setAttributeState(attribute, { state: result });
+      parseConfiguration.currentValue = result;
+    } else {
+      this.provider.logger.error('Invalid value received', value, buffer);
+    }
+
+    await this.updateLastSuccesfullRead();
+  };
+
+  private onDisconnect = async (reconnect: boolean = true): Promise<void> => {
+    this.provider.logger.warn('Disconnected');
+
+    this.isStopping = true;
+
+    if (this.readRegisterTimeout) {
+      this.provider.timeout.clear(this.readRegisterTimeout);
+      this.readRegisterTimeout = undefined;
+    }
+
+    while (this.runningRequest) {
+      this.provider.logger.trace('onDisconnect: Waiting for runningRequest to turn false');
+      await delay(1000);
+    }
+
+    if (!this.api) {
+      return;
+    }
+
+    if (reconnect) {
+      this.isStopping = false;
+
+      const isOpen = this.api.connect();
+
+      if (!isOpen) {
+        this.provider.logger.error('Failed to reconnect, reconnecting in 60 seconds');
+        this.readRegisterTimeout = await this.provider.timeout.set(this.onDisconnect.bind(this), 60000);
       } else {
-        this.provider.logger.error('Invalid value received', registerValue);
+        this.provider.logger.trace('Reconnected to device');
+        await this.readRegisters();
       }
     }
-
-    if (registerValues.length > 0) {
-      await this.updateLastSuccesfullRead();
-    }
-  }
+  };
 
   private readRegisters = async (): Promise<void> => {
     if (this.readRegisterTimeout) {
@@ -205,8 +238,7 @@ class ModbusSolarman implements Device {
     this.runningRequest = true;
 
     try {
-      const results = await this.api.readRegisters();
-      await this.handleResults(results);
+      await this.api.readRegistersInBatch();
     } catch (error: Error | any) {
       if (error.name === 'TransactionTimedOutError') {
         this.provider.logger.warn('Transaction timed out');
@@ -223,11 +255,42 @@ class ModbusSolarman implements Device {
       }
 
       if (!this.isStopping) {
-        this.readRegisterTimeout = this.provider.timeout.set(this.readRegisters.bind(this), interval);
+        const methodToCall = this.api.isConnected() ? this.readRegisters.bind(this) : this.connect.bind(this);
+        this.readRegisterTimeout = this.provider.timeout.set(methodToCall, interval);
       }
     }
   };
 
+  connect = async (): Promise<void> => {
+    this.runningRequest = false;
+    this.isStopping = false;
+    this.lastRestart = DateTime.now();
+
+    const { host, port, unitId, solarman, serial } = this.provider.getConfig();
+
+    if (this.readRegisterTimeout) {
+      this.provider.timeout.clear(this.readRegisterTimeout);
+    }
+
+    if (this.availabilityTimeoutId) {
+      this.provider.timeout.clear(this.availabilityTimeoutId);
+    }
+    this.availabilityTimeout();
+
+    this.provider.logger.trace(`Connecting to ${host}:${port} with unitId ${unitId} (solarman: ${solarman}, serial: ${serial})`);
+
+    this.api = solarman ? new Solarman(this.provider.logger, this.device, host, serial, 8899, 1) : new ModbusAPI(this.provider.logger, host, port, unitId, this.device);
+
+    this.api?.setOnError(this.onError);
+    this.api?.setOnDisconnect(this.onDisconnect);
+    this.api?.setOnDataReceived(this.onDataReceived);
+
+    const isOpen = await this.api.connect();
+
+    if (isOpen) {
+      await this.readRegisters();
+    }
+  };
 }
 
 export default ModbusSolarman;
