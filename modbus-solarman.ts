@@ -110,7 +110,6 @@ class ModbusSolarman implements Device {
 
   setAvailability = async (availability: boolean, force: boolean = false): Promise<void> => {
     if (this.availability !== availability || force) {
-      this.provider.logger.info('Setting availability:', availability);
       this.availability = availability;
       await this.provider.setAvailability(this.availability);
     }
