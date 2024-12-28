@@ -7,6 +7,8 @@ import { createRegisterBatches } from "../../repositories/device-repository/help
 import { ModbusRegister } from "../../repositories/device-repository/models/modbus-register";
 import { RegisterType } from "../../repositories/device-repository/models/enum/register-type";
 import { validateValue } from "../../helpers/validate-value";
+import { AccessMode } from "../../repositories/device-repository/models/enum/access-mode";
+import { delay } from "../../helpers/delay";
 
 export interface ModbusConnectionOptions {
     host: string;
@@ -18,6 +20,7 @@ export interface ModbusConnectionOptions {
 export class ModbusAPI2 implements IAPI2 {
 
     private device: ModbusDevice;
+    private busy: boolean = false;
 
     constructor(private deviceId: string, private connection: ModbusConnectionOptions, private log: Logger) {
         const result = DeviceRepository.getInstance().getDeviceById(this.deviceId);
@@ -34,6 +37,8 @@ export class ModbusAPI2 implements IAPI2 {
     }
 
     readRegisters = async (): Promise<Array<RegisterOutput>> => {
+        await this.waitInQueue('readRegisters');
+
         const client = await this.connect();
 
         const inputBatches = createRegisterBatches(this.log, this.device.inputRegisters);
@@ -60,11 +65,99 @@ export class ModbusAPI2 implements IAPI2 {
         }
 
         client.close(() => {
+            this.busy = false;
             this.log.trace('Closing Modbus connection');
         });
 
         return results;
     }
+
+    writeRegisters = async (register: ModbusRegister, values: any[]): Promise<boolean> => {
+        if (register.accessMode === AccessMode.ReadOnly) {
+            return false;
+        }
+
+        for (const value of values) {
+            if (!Buffer.isBuffer(value)) {
+                const valid = validateValue(value, register.dataType);
+                this.log.trace('Validating value', value, 'for register', register.address, 'with data type', register.dataType, 'result', valid);
+
+                if (!valid) {
+                    return false;
+                }
+            }
+        }
+
+        this.log.trace('Writing to address', register.address, ':', values);
+
+        await this.waitInQueue('writeRegisters');
+
+        const client = await this.connect();
+
+        try {
+            const result = await client.writeRegisters(register.address, values);
+            this.log.trace('Output', result.address);
+            return true;
+        } catch (error) {
+            this.log.error('Error writing to register', error);
+            return false;
+        } finally {
+            client.close(() => {
+                this.busy = false;
+                this.log.trace('Closing modbus connection');
+            });
+        }
+    };
+
+    /**
+     * Writes a value to a Modbus register.
+     *
+     * This method first checks if the register is read-only. If it is, the method returns false.
+     * It then validates the value to be written using the `validateValue` function. If the value is invalid, an error is logged and the method returns false.
+     * The method then attempts to write the value to the register. If the write operation fails, an error is logged and the method returns false.
+     * If the write operation is successful, the method returns true.
+     *
+     * @param register - The Modbus register to write to.
+     * @param value - The value to write.
+     * @returns A promise that resolves to a boolean indicating whether the write operation was successful.
+     */
+    writeRegister = async (register: ModbusRegister, value: any): Promise<boolean> => {
+        return this.writeRegisters(register, [value]);
+    };
+
+    /**
+     * Writes a buffer to a Modbus register.
+     *
+     * This method first checks if the register is read-only. If it is, the method returns false.
+     * The method then logs the buffer to be written and attempts to write the buffer to the register.
+     * If the write operation fails, an error is logged and the method returns false.
+     * If the write operation is successful, the method returns true.
+     *
+     * @param register - The Modbus register to write to.
+     * @param buffer - The buffer to write.
+     * @returns A promise that resolves to a boolean indicating whether the write operation was successful.
+     */
+    writeBufferRegister = async (register: ModbusRegister, buffer: Buffer): Promise<boolean> => {
+        this.log.trace('Writing to register', register.address, buffer, typeof buffer);
+
+        await this.waitInQueue('writeBufferRegister');
+
+        const client = await this.connect();
+        try {
+            const result = await client.writeRegisters(register.address, buffer);
+            this.log.trace('Output', result.address);
+        } catch (error) {
+            this.log.error('Error writing to register', error);
+            return false;
+        } finally {
+            client.close(() => {
+                this.busy = false;
+                this.log.trace('Closing modbus connection');
+            });
+        }
+
+        return true;
+    };
 
     private connect = async (): Promise<ModbusRTU> => {
         const client = new ModbusRTU();
@@ -76,11 +169,11 @@ export class ModbusAPI2 implements IAPI2 {
         await client.connectTCP(host, {
             port,
             keepAlive: true,
-            timeout: timeout ?? 1000
+            timeout: timeout ?? 5000
         });
 
         client.setID(unitId);
-        client.setTimeout(timeout ?? 1000);
+        client.setTimeout(timeout ?? 5000);
 
         client.on('error', error => {
             this.log.error(error);
@@ -127,7 +220,6 @@ export class ModbusAPI2 implements IAPI2 {
                             buffer,
                             parseConfiguration
                         })
-                        // await this.onDataReceived!(value, buffer, parseConfiguration);
                     }
                 } else {
                     this.log.error('Invalid value', value, 'for address', register.address, register.dataType);
@@ -143,4 +235,18 @@ export class ModbusAPI2 implements IAPI2 {
         return result;
     };
 
+    private waitInQueue = async (command: string) => {
+        let output = false;
+
+        while (this.busy) {
+            if (!output) {
+                this.log.trace(`Waiting in queue for ${command}`);
+                output = true;
+            }
+
+            await delay(500);
+        }
+
+        this.busy = true;
+    }
 }

@@ -1,13 +1,11 @@
 import { Attribute, BaseAttributeWithState, Device, Provider, SelectAttribute } from 'quantumhub-sdk';
-import { IAPI, IAPI2, RegisterOutput } from './api/iapi';
-import { ModbusAPI } from './api/modbus/modbus-api';
-import { Solarman } from './api/solarman/solarman';
+import { IAPI2, RegisterOutput } from './api/iapi';
 import { DeviceRepository } from './repositories/device-repository/device-repository';
 import { ModbusDevice } from './repositories/device-repository/models/modbus-device';
-import { ModbusRegister, ModbusRegisterParseConfiguration } from './repositories/device-repository/models/modbus-register';
 import { DateTime } from 'luxon';
 import { delay } from './helpers/delay';
 import { ModbusAPI2 } from './api/modbus/modbus-api2';
+import { RegisterType } from './repositories/device-repository/models/enum/register-type';
 
 const DEFAULT_UNAVAILABLE_TIMEOUT = 180; // 3 minutes of no data marks the device as unavailable
 const DEFAULT_UNAVAILABLE_RECONNECT_TIMEOUT = 21600 // 6 hours of no data reconnects the device
@@ -91,7 +89,6 @@ class ModbusSolarman implements Device {
       unitId,
     }, this.provider.logger);
 
-    /*
     const { lastSuccessfullRead } = await this.provider.cache.all();
     if (lastSuccessfullRead) {
       this.lastSuccessfullRead = DateTime.fromISO(lastSuccessfullRead);
@@ -103,7 +100,6 @@ class ModbusSolarman implements Device {
       this.provider.logger.warn('No `lastSuccessFullRead` found in cache');
       await this.updateLastSuccesfullRead();
     }
-    */
 
     return true;
   };
@@ -132,6 +128,24 @@ class ModbusSolarman implements Device {
   onSelectChanged = async (attribute: SelectAttribute, value: string): Promise<void> => {
     if (attribute.key === 'ems_mode') {
       this.provider.logger.info('EMS mode changed to', value);
+
+      const index = attribute.options.indexOf(value);
+      if (index === -1) {
+        this.provider.logger.error(`Can't find option index`, value);
+        return;
+      }
+
+      const register = this.device.getRegisterByTypeAndAddress(RegisterType.Holding, 2500);
+
+      if (!register) {
+        this.provider.logger.error(`Can't find register for address 2500`);
+        return;
+      }
+
+      const buffer = Buffer.from([index]);
+      this.provider.logger.trace(`Writing value ${index} to address ${register.address}`);
+
+      await this.api?.writeRegister(register, index);
     }
   };
 
@@ -208,7 +222,6 @@ class ModbusSolarman implements Device {
     }
 
     this.runningRequest = true;
-
     try {
       const results = await this.api.readRegisters();
       await this.handleResults(results);

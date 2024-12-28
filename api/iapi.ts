@@ -35,4 +35,9 @@ export interface IAPI2 {
   getDevice(): ModbusDevice;
 
   readRegisters(): Promise<Array<RegisterOutput>>;
+
+  writeRegister(register: ModbusRegister, value: any): Promise<boolean>;
+  writeRegisters(startRegister: ModbusRegister, values: any[]): Promise<boolean>;
+  writeBufferRegister(register: ModbusRegister, buffer: Buffer): Promise<boolean>;
+
 }
