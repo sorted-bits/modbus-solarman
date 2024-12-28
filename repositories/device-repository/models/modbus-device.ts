@@ -158,4 +158,15 @@ export class ModbusDevice {
         return undefined;
     }
   }
+
+  getRegisterByTypeAndKey(type: RegisterType, key: string): ModbusRegister | undefined {
+    switch (type) {
+      case RegisterType.Input:
+        return this.inputRegisters.find((register) => register.hasCapability(key));
+      case RegisterType.Holding:
+        return this.holdingRegisters.find((register) => register.hasCapability(key));
+      default:
+        return undefined;
+    }
+  }
 }

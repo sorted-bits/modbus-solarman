@@ -143,10 +143,13 @@ attributes:
 
   measure_power_charge_instructions:
     name: Charge command power
-    type: sensor
+    type: number
     device_class: power
     state_class: measurement
     unit_of_measurement: W
+    min: -22000
+    max: 22000
+    step: 500
 
   measure_percentage_acpchgmax:
     name: AC charge max

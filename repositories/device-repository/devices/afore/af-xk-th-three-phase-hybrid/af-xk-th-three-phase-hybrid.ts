@@ -5,7 +5,7 @@
  * Non-commercial use only
  */
 
-import { Logger, SelectAttribute } from 'quantumhub-sdk';
+import { Logger, NumberAttribute, SelectAttribute } from 'quantumhub-sdk';
 import { IAPI, IAPI2 } from '../../../../../api/iapi';
 import { Brand } from '../../../models/enum/brand';
 import { bufferForDataType } from '../../../models/enum/register-datatype';
@@ -37,7 +37,8 @@ export class AforeAFXKTH extends ModbusDevice {
     };
 
     this.registerUpdates = {
-      "ems_mode": this.setEmsMode
+      "ems_mode": this.setEmsMode,
+      "measure_power_charge_instructions": this.setChargeValue
     }
 
     this.addInputRegisters(inputRegisters);
@@ -47,6 +48,15 @@ export class AforeAFXKTH extends ModbusDevice {
   writeValueToRegister = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
     client.writeValueToRegister(args);
   };
+
+  setNumberValue = async (log: Logger, args: { attribute: SelectAttribute, value: string }, client: IAPI2): Promise<void> => {
+    const register = this.getRegisterByTypeAndKey(RegisterType.Holding, args.attribute.key);
+
+    if (register === undefined) {
+      log.error('Register not found');
+      return;
+    }
+  }
 
   setChargeCommand = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
     const emsRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2500);
@@ -81,6 +91,30 @@ export class AforeAFXKTH extends ModbusDevice {
       origin.error('Error writing to register', error);
     }
   };
+
+  setChargeValue = async (log: Logger, args: { attribute: NumberAttribute, value: number }, client: IAPI2): Promise<void> => {
+    const register = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2502);
+
+    if (register === undefined) {
+      log.error('Register not found');
+      return;
+    }
+
+    if (isNaN(args.value) || args.value < -22000 || args.value > 22000) {
+      log.error('Value is out of bounds', args.value)
+      return;
+    }
+
+    const powerBuffer = bufferForDataType(register.dataType, args.value);
+
+    log.info('Setting Charge value to', args.value);
+    try {
+      const powerOutput = await client.writeBufferRegister(register, powerBuffer);
+      log.trace('setChargeValue output:', powerOutput);
+    } catch (error) {
+      log.error('Error writing to register', error);
+    }
+  }
 
   setEmsMode = async (log: Logger, args: { attribute: SelectAttribute, value: string }, client: IAPI2): Promise<void> => {
     const emsRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2500);

@@ -1,4 +1,4 @@
-import { Attribute, BaseAttributeWithState, Device, Provider, SelectAttribute } from 'quantumhub-sdk';
+import { Attribute, BaseAttributeWithState, Device, NumberAttribute, Provider, SelectAttribute } from 'quantumhub-sdk';
 import { IAPI2, RegisterOutput } from './api/iapi';
 import { DeviceRepository } from './repositories/device-repository/device-repository';
 import { ModbusDevice } from './repositories/device-repository/models/modbus-device';
@@ -129,8 +129,12 @@ class ModbusSolarman implements Device {
     return await this.valueChanged(attribute, value);
   };
 
+  onNumberChanged = async (attribute: NumberAttribute, value: any): Promise<void> => {
+    return await this.valueChanged(attribute, value);
+  }
+
   valueChanged = async (attribute: Attribute, value: any): Promise<void> => {
-    this.provider.logger.trace(`Attribute ${attribute} changed to ${value}`);
+    this.provider.logger.trace(`Attribute ${attribute.key} changed to ${value}`);
 
     const key = attribute.key;
     const updateMethod = this.device.registerUpdates[key];
