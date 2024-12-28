@@ -1,5 +1,5 @@
 import { Logger } from 'quantumhub-sdk';
-import { IAPI } from '../../../api/iapi';
+import { IAPI, IAPI2 } from '../../../api/iapi';
 import { defaultValueConverter } from '../helpers/default-value-converter';
 import { Brand } from './enum/brand';
 import { RegisterType } from './enum/register-type';
@@ -90,6 +90,14 @@ export class ModbusDevice {
    * @memberof Device
    */
   public supportedFlows: SupportedFlows = {};
+
+  public registerUpdates: {
+    [id: string]: (
+      origin: Logger,
+      args: any,
+      client: IAPI2
+    ) => Promise<void>;
+  } = {}
 
   constructor(id: string, brand: Brand, name: string, description: string) {
     this.id = id;

@@ -126,31 +126,23 @@ class ModbusSolarman implements Device {
   };
 
   onSelectChanged = async (attribute: SelectAttribute, value: string): Promise<void> => {
-    if (attribute.key === 'ems_mode') {
-      this.provider.logger.info('EMS mode changed to', value);
-
-      const index = attribute.options.indexOf(value);
-      if (index === -1) {
-        this.provider.logger.error(`Can't find option index`, value);
-        return;
-      }
-
-      const register = this.device.getRegisterByTypeAndAddress(RegisterType.Holding, 2500);
-
-      if (!register) {
-        this.provider.logger.error(`Can't find register for address 2500`);
-        return;
-      }
-
-      const buffer = Buffer.from([index]);
-      this.provider.logger.trace(`Writing value ${index} to address ${register.address}`);
-
-      await this.api?.writeRegister(register, index);
-    }
+    return await this.valueChanged(attribute, value);
   };
 
   valueChanged = async (attribute: Attribute, value: any): Promise<void> => {
     this.provider.logger.trace(`Attribute ${attribute} changed to ${value}`);
+
+    const key = attribute.key;
+    const updateMethod = this.device.registerUpdates[key];
+
+    if (updateMethod) {
+      updateMethod(this.provider.logger, {
+        value: value,
+        attribute: attribute,
+      }, this.api!)
+    } else {
+      this.provider.logger.warn('No update method found for', attribute.key);
+    }
   };
 
   stop = async (): Promise<void> => {

@@ -5,8 +5,8 @@
  * Non-commercial use only
  */
 
-import { Logger } from 'quantumhub-sdk';
-import { IAPI } from '../../../../../api/iapi';
+import { Logger, SelectAttribute } from 'quantumhub-sdk';
+import { IAPI, IAPI2 } from '../../../../../api/iapi';
 import { Brand } from '../../../models/enum/brand';
 import { bufferForDataType } from '../../../models/enum/register-datatype';
 import { RegisterType } from '../../../models/enum/register-type';
@@ -30,12 +30,15 @@ export class AforeAFXKTH extends ModbusDevice {
       actions: {
         set_charge_command: this.setChargeCommand,
         write_value_to_register: this.writeValueToRegister,
-        set_ems_mode: this.setEmsMode,
         set_ac_charging_timeslot: this.setAcChargingTimeslot,
         set_timing_ac_charge_off: this.setTimingAcChargeOff,
         set_timing_ac_charge_on: this.setTimingAcChargeOn,
       },
     };
+
+    this.registerUpdates = {
+      "ems_mode": this.setEmsMode
+    }
 
     this.addInputRegisters(inputRegisters);
     this.addHoldingRegisters(holdingRegisters);
@@ -79,36 +82,27 @@ export class AforeAFXKTH extends ModbusDevice {
     }
   };
 
-  setEmsMode = async (origin: Logger, args: { mode: number }, client: IAPI): Promise<void> => {
+  setEmsMode = async (log: Logger, args: { attribute: SelectAttribute, value: string }, client: IAPI2): Promise<void> => {
     const emsRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2500);
 
     if (emsRegister === undefined) {
-      origin.error('Register not found');
+      log.error('Register not found');
       return;
     }
 
-    const { mode } = args;
-
-    const modeNumber = Number(mode);
-
-    if (isNaN(modeNumber)) {
-      origin.error('Trying to set an invalid EMS mode', mode);
+    const mode = args.attribute.options.indexOf(args.value);
+    if (mode === -1) {
+      log.error(`Can't find option index`, mode);
       return;
     }
 
-    if (modeNumber < 0 || modeNumber > 8) {
-      origin.error('Value out of range');
-      return;
-    }
-
-    origin.info('Setting EMS mode to', modeNumber, typeof modeNumber);
+    log.info('Setting EMS mode to', mode, args.value);
 
     try {
-      const emsModeOutput = await client.writeRegister(emsRegister, modeNumber);
-
-      origin.trace('setEmsModeOutput', emsModeOutput);
+      const emsModeOutput = await client.writeRegister(emsRegister, mode);
+      log.trace('setEmsModeOutput', emsModeOutput);
     } catch (error) {
-      origin.error('Error writing to register', error);
+      log.error('Error writing to register', error);
     }
   };
 
