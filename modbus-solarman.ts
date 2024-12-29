@@ -173,7 +173,7 @@ class ModbusSolarman implements Device {
 
     this.provider.logger.trace('cleanUp: Waiting for runningRequest to turn false');
     while (this.runningRequest) {
-      await delay(1000);
+      await delay(500);
     }
     this.provider.logger.trace('cleanUp: runningRequest is false');
   };
@@ -214,7 +214,7 @@ class ModbusSolarman implements Device {
     const { updateInterval } = this.provider.getConfig();
 
     while (this.runningRequest) {
-      await delay(1000);
+      await delay(500);
     }
 
     this.runningRequest = true;
