@@ -122,7 +122,7 @@ class ModbusSolarman implements Device {
 
     this.availabilityTimeout();
 
-    await this.readRegisters();
+    this.readRegisters();
   };
 
   onSelectChanged = async (attribute: SelectAttribute, value: string): Promise<void> => {
