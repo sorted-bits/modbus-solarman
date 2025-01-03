@@ -5,7 +5,6 @@ import { ModbusDevice } from './repositories/device-repository/models/modbus-dev
 import { DateTime } from 'luxon';
 import { delay } from './helpers/delay';
 import { ModbusAPI2 } from './api/modbus/modbus-api2';
-import { RegisterType } from './repositories/device-repository/models/enum/register-type';
 
 const DEFAULT_UNAVAILABLE_TIMEOUT = 180; // 3 minutes of no data marks the device as unavailable
 const DEFAULT_UNAVAILABLE_RECONNECT_TIMEOUT = 21600 // 6 hours of no data reconnects the device
@@ -17,6 +16,7 @@ class ModbusSolarman implements Device {
   private availability: boolean = false;
   private device!: ModbusDevice;
   private runningRequest: boolean = false;
+  private runningRequestCount: number = 0;
   private isStopping: boolean = false;
 
   private readRegisterTimeout: undefined | ReturnType<typeof setTimeout>;
@@ -49,7 +49,6 @@ class ModbusSolarman implements Device {
         restarting = true;
         await this.provider.restart();
       }
-
     }
 
     if (!restarting) {
@@ -201,6 +200,13 @@ class ModbusSolarman implements Device {
   }
 
   private readRegisters = async (): Promise<void> => {
+    if (this.runningRequest && this.runningRequestCount > 2) {
+      this.provider.logger.warn('Cancelling `readRegisters` as there are already too many requests running');
+      return;
+    }
+
+    this.runningRequestCount++;
+
     if (this.readRegisterTimeout) {
       this.provider.timeout.clear(this.readRegisterTimeout);
       this.readRegisterTimeout = undefined;
@@ -212,6 +218,10 @@ class ModbusSolarman implements Device {
     }
 
     const { updateInterval } = this.provider.getConfig();
+
+    if (this.runningRequest) {
+      this.provider.logger.trace('Request already running, waiting for it to finish');
+    }
 
     while (this.runningRequest) {
       await delay(500);
@@ -229,6 +239,7 @@ class ModbusSolarman implements Device {
       }
     } finally {
       this.runningRequest = false;
+      this.runningRequestCount--;
 
       const interval = this.isAvailable ? Math.max(updateInterval, 2) * 1000 : 60000;
 
