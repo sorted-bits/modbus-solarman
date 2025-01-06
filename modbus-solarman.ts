@@ -195,6 +195,8 @@ class ModbusSolarman implements Device {
     }
 
     if (registerValues.length > 0) {
+      this.provider.logger.trace(`Updated ${registerValues.length} states`);
+
       await this.updateLastSuccesfullRead();
     }
   }
