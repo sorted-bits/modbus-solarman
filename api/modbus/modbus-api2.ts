@@ -67,8 +67,9 @@ export class ModbusAPI2 implements IAPI2 {
         } catch (error) {
             this.log.error('readRegisters error', error);
         } finally {
+            this.busy = false;
+
             client?.close(() => {
-                this.busy = false;
                 this.log.trace('Closing Modbus connection');
             });
         }
