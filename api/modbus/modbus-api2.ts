@@ -38,36 +38,40 @@ export class ModbusAPI2 implements IAPI2 {
 
     readRegisters = async (): Promise<Array<RegisterOutput>> => {
         await this.waitInQueue('readRegisters');
-
-        const client = await this.connect();
-
-        const inputBatches = createRegisterBatches(this.log, this.device.inputRegisters);
-        const holdingBatches = createRegisterBatches(this.log, this.device.holdingRegisters);
-
         const results: Array<RegisterOutput> = [];
 
-        for (const batch of inputBatches) {
-            try {
-                const result = await this.readBatch(client, batch, RegisterType.Input);
-                results.push(...result);
-            } catch (error) {
+        let client: ModbusRTU | undefined = undefined;
+        try {
+            client = await this.connect();
+            const inputBatches = createRegisterBatches(this.log, this.device.inputRegisters);
+            const holdingBatches = createRegisterBatches(this.log, this.device.holdingRegisters);
 
+            for (const batch of inputBatches) {
+                try {
+                    const result = await this.readBatch(client, batch, RegisterType.Input);
+                    results.push(...result);
+                }
+                catch (error) {
+                    this.log.error('readRegister input error', error);
+                }
             }
-        }
 
-        for (const batch of holdingBatches) {
-            try {
-                const result = await this.readBatch(client, batch, RegisterType.Holding);
-                results.push(...result);
-            } catch (error) {
-
+            for (const batch of holdingBatches) {
+                try {
+                    const result = await this.readBatch(client, batch, RegisterType.Holding);
+                    results.push(...result);
+                } catch (error) {
+                    this.log.error('readRegister holding error', error);
+                }
             }
+        } catch (error) {
+            this.log.error('readRegisters error', error);
+        } finally {
+            client?.close(() => {
+                this.busy = false;
+                this.log.trace('Closing Modbus connection');
+            });
         }
-
-        client.close(() => {
-            this.busy = false;
-            this.log.trace('Closing Modbus connection');
-        });
 
         return results;
     }
