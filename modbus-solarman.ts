@@ -1,4 +1,4 @@
-import { Attribute, BaseAttributeWithState, Device, NumberAttribute, Provider, SelectAttribute } from 'quantumhub-sdk';
+import { Attribute, BaseAttributeWithState, Device, NumberAttribute, Provider, SelectAttribute, SwitchAttribute } from 'quantumhub-sdk';
 import { IAPI2, RegisterOutput } from './api/iapi';
 import { DeviceRepository } from './repositories/device-repository/device-repository';
 import { ModbusDevice } from './repositories/device-repository/models/modbus-device';
@@ -131,6 +131,30 @@ class ModbusSolarman implements Device {
   onNumberChanged = async (attribute: NumberAttribute, value: any): Promise<void> => {
     return await this.valueChanged(attribute, value);
   }
+
+  onSwitchChanged = async (attribute: SwitchAttribute, value: boolean): Promise<void> => {
+    this.provider.logger.info('Switch changed:', attribute.name, value);
+
+    const key = attribute.key;
+
+    switch (key) {
+      case 'ac_charge':
+        const methodKey = value ? 'set_timing_ac_charge_on' : 'set_timing_ac_charge_off';
+        const method = this.device.supportedFlows?.actions?.[methodKey];
+
+        if (method) {
+          await method(this.provider.logger, {}, this.api!);
+        } else {
+          this.provider.logger.error('Method not found', methodKey);
+        }
+
+        break;
+    }
+
+    if (attribute.optimistic) {
+      this.provider.setAttributeState(attribute, { state: value });
+    }
+  };
 
   valueChanged = async (attribute: Attribute, value: any): Promise<void> => {
     this.provider.logger.trace(`Attribute ${attribute.key} changed to ${value}`);

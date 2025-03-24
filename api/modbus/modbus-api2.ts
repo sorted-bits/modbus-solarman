@@ -9,6 +9,7 @@ import { RegisterType } from "../../repositories/device-repository/models/enum/r
 import { validateValue } from "../../helpers/validate-value";
 import { AccessMode } from "../../repositories/device-repository/models/enum/access-mode";
 import { delay } from "../../helpers/delay";
+import { logBits, writeBitsToBuffer } from "../../helpers/bits";
 
 export interface ModbusConnectionOptions {
     host: string;
@@ -115,6 +116,61 @@ export class ModbusAPI2 implements IAPI2 {
     };
 
     /**
+     * Writes bits to a Modbus register.
+     *
+     * This method first reads the current value of the register. If the read operation fails, an error is logged and the method returns false.
+     * It then checks if the bit index is within the range of the register. If it is not, an error is logged and the method returns false.
+     * The method then calculates the byte index and the start bit index within the byte.
+     * It then writes the bits to the buffer at the calculated indices.
+     * Finally, it writes the buffer back to the register.
+     *
+     * @param register - The Modbus register to write to.
+     * @param registerType - The type of the register.
+     * @param bits - The bits to write.
+     * @param bitIndex - The index at which to start writing the bits.
+     * @returns A promise that resolves to a boolean indicating whether the write operation was successful.
+     */
+    writeBitsToRegister = async (register: ModbusRegister, bits: number[], bitIndex: number): Promise<boolean> => {
+        try {
+            const client = await this.connect();
+
+            var readBuffer: Buffer | undefined = await this.readAddressWithoutConversionWithRetries(client, register, 5);
+
+            if (readBuffer === undefined) {
+                this.log.error('Failed to read current value');
+                return false;
+            }
+        } catch (error) {
+            this.log.error('Error reading current value', error);
+            return false;
+        }
+
+        try {
+            logBits(this.log, readBuffer);
+
+            if (readBuffer.length * 8 < bitIndex + bits.length) {
+                this.log.error('Bit index out of range');
+                return false;
+            }
+
+            const byteIndex = readBuffer.length - 1 - Math.floor(bitIndex / 8);
+            const startBitIndex = bitIndex % 8;
+
+            this.log.trace('writeBitsToRegister', register.registerType, bits, startBitIndex, byteIndex);
+
+            const result = writeBitsToBuffer(readBuffer, byteIndex, bits, startBitIndex);
+            logBits(this.log, result);
+
+            await this.writeBufferRegister(register, result);
+            return true;
+        } catch (error) {
+            return true;
+        } finally {
+            this.busy = false;
+        }
+    };
+
+    /**
      * Writes a value to a Modbus register.
      *
      * This method first checks if the register is read-only. If it is, the method returns false.
@@ -164,21 +220,24 @@ export class ModbusAPI2 implements IAPI2 {
         return true;
     };
 
+
     private connect = async (): Promise<ModbusRTU> => {
         const client = new ModbusRTU();
 
         const { host, port, timeout, unitId } = this.connection;
+        const timeoutValue = timeout ?? 5000;
 
-        this.log.trace('Connecting to Modbus device', host, port, timeout, unitId);
+
+        this.log.trace('Connecting to Modbus device', host, port, timeoutValue, unitId);
 
         await client.connectTCP(host, {
             port,
             keepAlive: true,
-            timeout: timeout ?? 5000
+            timeout: timeoutValue
         });
 
         client.setID(unitId);
-        client.setTimeout(timeout ?? 5000);
+        client.setTimeout(timeoutValue);
 
         client.on('error', error => {
             this.log.error(error);
@@ -240,6 +299,53 @@ export class ModbusAPI2 implements IAPI2 {
         return result;
     };
 
+    /**
+  /**
+   * Reads a Modbus register without converting the data.
+   *
+   * @param register - The Modbus register to read.
+   * @param registerType - The type of the register.
+   * @returns A promise that resolves to the read data or undefined if the read operation failed.
+   */
+    readAddressWithoutConversion = async (client: ModbusRTU, register: ModbusRegister): Promise<Buffer | undefined> => {
+        await this.waitInQueue('readRegisters');
+
+        try {
+            const data = register.registerType === RegisterType.Input ? await client.readInputRegisters(register.address, register.length) : await client.readHoldingRegisters(register.address, register.length);
+
+            this.log.trace('Reading address', register.address, ':', data);
+
+            if (data && data.buffer) {
+                return data.buffer;
+            }
+
+            return undefined;
+        } catch (error) {
+            this.log.error('Error reading address', register.address, JSON.stringify(error));
+            return undefined;
+        } finally {
+            this.busy = false;
+        }
+    };
+
+    private readAddressWithoutConversionWithRetries = async (client: ModbusRTU, register: ModbusRegister, retries: number): Promise<Buffer | undefined> => {
+        let result: Buffer | undefined = undefined;
+
+        for (let i = 0; i < retries; i++) {
+            result = await this.readAddressWithoutConversion(client, register);
+
+            if (result !== undefined) {
+                break;
+            }
+
+            this.log.error('Failed to read address', register.address, 'retrying', i + 1);
+
+            await delay(1000);
+        }
+
+        return result;
+    }
+
     private waitInQueue = async (command: string) => {
         let output = false;
 
@@ -251,6 +357,8 @@ export class ModbusAPI2 implements IAPI2 {
 
             await delay(500);
         }
+
+        this.log.trace(`Starting ${command}`);
 
         this.busy = true;
     }

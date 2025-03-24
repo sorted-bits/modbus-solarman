@@ -1,5 +1,5 @@
 import { Logger } from 'quantumhub-sdk';
-import { IAPI } from '../../../api/iapi';
+import { IAPI2 } from '../../../api/iapi';
 
 export enum SupportedFlowTypes {
   set_max_solar_power = 'set_max_solar_power',
@@ -38,7 +38,7 @@ export interface SupportedFlows {
     [id in SupportedFlowTypes]?: (
       origin: Logger,
       args: any,
-      client: IAPI
+      client: IAPI2
     ) => Promise<void>;
   };
 }

@@ -29,7 +29,6 @@ export class AforeAFXKTH extends ModbusDevice {
     this.supportedFlows = {
       actions: {
         set_charge_command: this.setChargeCommand,
-        write_value_to_register: this.writeValueToRegister,
         set_ac_charging_timeslot: this.setAcChargingTimeslot,
         set_timing_ac_charge_off: this.setTimingAcChargeOff,
         set_timing_ac_charge_on: this.setTimingAcChargeOn,
@@ -45,10 +44,6 @@ export class AforeAFXKTH extends ModbusDevice {
     this.addHoldingRegisters(holdingRegisters);
   }
 
-  writeValueToRegister = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
-    client.writeValueToRegister(args);
-  };
-
   setNumberValue = async (log: Logger, args: { attribute: SelectAttribute, value: string }, client: IAPI2): Promise<void> => {
     const register = this.getRegisterByTypeAndKey(RegisterType.Holding, args.attribute.key);
 
@@ -58,7 +53,7 @@ export class AforeAFXKTH extends ModbusDevice {
     }
   }
 
-  setChargeCommand = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setChargeCommand = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const emsRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2500);
     const commandRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2501);
     const powerRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2502);
@@ -140,7 +135,7 @@ export class AforeAFXKTH extends ModbusDevice {
     }
   };
 
-  setAcChargingTimeslot = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setAcChargingTimeslot = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const { timeslot, starttime, endtime } = args;
     if (timeslot < 1 || timeslot > 4) {
       origin.error('Value out of range');
@@ -182,7 +177,7 @@ export class AforeAFXKTH extends ModbusDevice {
     }
   };
 
-  setTimingAcChargeOff = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setTimingAcChargeOff = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const register = this.getRegisterByTypeAndAddress(RegisterType.Holding, 206);
 
     if (register === undefined) {
@@ -198,11 +193,18 @@ export class AforeAFXKTH extends ModbusDevice {
     }
   };
 
-  setTimingAcChargeOn = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setTimingAcChargeOn = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const enabledRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 206);
-    const acpchgmaxRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2504);
-    const acsocmaxchgRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2505);
+    //const acpchgmaxRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2504);
+    //const acsocmaxchgRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 2505);
 
+    if (enabledRegister === undefined) {
+      origin.error('Register not found');
+
+      return;
+    }
+
+    /*
     if (enabledRegister === undefined || acpchgmaxRegister === undefined || acsocmaxchgRegister === undefined) {
       origin.error('Register not found');
       return;
@@ -214,10 +216,11 @@ export class AforeAFXKTH extends ModbusDevice {
       origin.error('Value out of range');
       return;
     }
-
+    */
     try {
       const output = await client.writeBitsToRegister(enabledRegister, [1], 4);
 
+      /*
       const acpchgmaxOutput = await client.writeRegister(
         acpchgmaxRegister,
         acpchgmaxRegister.calculatePayload(acpchgmax, origin)
@@ -226,8 +229,8 @@ export class AforeAFXKTH extends ModbusDevice {
         acsocmaxchgRegister,
         acsocmaxchgRegister.calculatePayload(acsocmaxchg, origin)
       );
-
-      origin.trace('Output', output, acpchgmaxOutput, acsocmaxchgOutput);
+      */
+      origin.trace('Output', output);
     } catch (error) {
       origin.error('Error writing to register', error);
     }

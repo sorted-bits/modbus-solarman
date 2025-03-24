@@ -166,6 +166,11 @@ attributes:
   ems_mode_text:
     name: EMS Mode
     type: sensor
+  
+  ac_charge:
+    name: AC Charge
+    type: switch
+    optimistic: true
 
   ems_mode:
     name: EMS Mode

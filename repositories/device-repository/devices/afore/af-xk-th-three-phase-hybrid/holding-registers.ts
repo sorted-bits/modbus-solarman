@@ -22,6 +22,11 @@ export const holdingRegisters: ModbusRegister[] = [
         return 'Enabled';
       }
       return 'Disabled';
+    }).addTransform('ac_charge', (_, buffer) => {
+      if (readBitBE(buffer, 4) === 1) {
+        return true;
+      }
+      return false;
     }),
 
   ModbusRegister.default('status_code_run_mode', 2500, 1, RegisterDataType.UINT16, AccessMode.ReadWrite).addTransform('ems_mode', (value) => {

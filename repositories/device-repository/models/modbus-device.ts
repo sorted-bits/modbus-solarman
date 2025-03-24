@@ -106,7 +106,7 @@ export class ModbusDevice {
     this.description = description;
   }
 
-  callAction = async (origin: Logger, action: string, args: any, api: IAPI): Promise<void> => {
+  callAction = async (origin: Logger, action: string, args: any, api: IAPI2): Promise<void> => {
     const flowType = SupportedFlowTypes[action as keyof typeof SupportedFlowTypes];
 
     if (!this.supportedFlows?.actions) {

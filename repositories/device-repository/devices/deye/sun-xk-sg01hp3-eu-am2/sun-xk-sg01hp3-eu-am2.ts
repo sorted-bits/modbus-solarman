@@ -6,7 +6,7 @@
  */
 
 import { Logger } from 'quantumhub-sdk';
-import { IAPI } from '../../../../../api/iapi';
+import { IAPI, IAPI2 } from '../../../../../api/iapi';
 import { logBits, writeBitsToBuffer } from '../../../../../helpers/bits';
 import { Brand } from '../../../models/enum/brand';
 import { RegisterType } from '../../../models/enum/register-type';
@@ -30,8 +30,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
         set_max_solar_power: this.setMaxSolarPower,
         set_solar_sell: this.setSolarSell,
         set_max_sell_power: this.setMaxSellPower,
-        write_value_to_register: this.writeValueToRegister,
-        set_energy_pattern: this.setEnergyPattern,
+        // set_energy_pattern: this.setEnergyPattern,
         set_grid_peak_shaving_on: this.setGridPeakShavingOn,
         set_grid_peak_shaving_off: this.setGridPeakShavingOff,
         set_work_mode_and_zero_export_power: this.setWorkmodeAndZeroExportPower,
@@ -45,7 +44,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     this.addHoldingRegisters(holdingRegisters);
   }
 
-  setMaxSolarPower = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setMaxSolarPower = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const register = this.getRegisterByTypeAndAddress(RegisterType.Holding, 340);
 
     if (register === undefined) {
@@ -71,7 +70,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     }
   };
 
-  setMaxSellPower = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setMaxSellPower = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const register = this.getRegisterByTypeAndAddress(RegisterType.Holding, 143);
 
     if (register === undefined) {
@@ -97,7 +96,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     }
   };
 
-  setSolarSell = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setSolarSell = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const register = this.getRegisterByTypeAndAddress(RegisterType.Holding, 145);
     if (register === undefined) {
       origin.error('Register not found');
@@ -115,52 +114,48 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
       origin.error('Error enabling solar selling', error);
     }
   };
-
-  writeValueToRegister = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
-    client.writeValueToRegister(args);
-  };
-
-  setEnergyPattern = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
-    const register = this.getRegisterByTypeAndAddress(RegisterType.Holding, 141);
-
-    if (register === undefined) {
-      origin.error('Register not found');
-      return;
-    }
-
-    const { value } = args;
-
-    if (value !== 'batt_first' && value !== 'load_first') {
-      origin.error('Invalid value', value);
-      return;
-    }
-
-    origin.trace('Setting energy pattern to: ', value);
-
-    const newBits = value === 'batt_first' ? [0] : [1];
-
-    try {
-      const readBuffer = await client.readAddressWithoutConversion(register);
-
-      if (!readBuffer) {
-        throw new Error('Error reading current value');
+  /*
+    setEnergyPattern = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
+      const register = this.getRegisterByTypeAndAddress(RegisterType.Holding, 141);
+  
+      if (register === undefined) {
+        origin.error('Register not found');
+        return;
       }
-
-      logBits(origin, readBuffer);
-
-      const byteIndex = 1; // Big Endian so we count in reverse
-      const resultBuffer = writeBitsToBuffer(readBuffer, byteIndex, newBits);
-      logBits(origin, resultBuffer);
-
-      const result = await client.writeBufferRegister(register, resultBuffer);
-      origin.trace('Output', result);
-    } catch (error) {
-      origin.error('Error reading current value', error);
-      return;
-    }
-  };
-
-  setWorkmodeAndZeroExportPower = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  
+      const { value } = args;
+  
+      if (value !== 'batt_first' && value !== 'load_first') {
+        origin.error('Invalid value', value);
+        return;
+      }
+  
+      origin.trace('Setting energy pattern to: ', value);
+  
+      const newBits = value === 'batt_first' ? [0] : [1];
+  
+      try {
+        const readBuffer = await client.readAddressWithoutConversion(register);
+  
+        if (!readBuffer) {
+          throw new Error('Error reading current value');
+        }
+  
+        logBits(origin, readBuffer);
+  
+        const byteIndex = 1; // Big Endian so we count in reverse
+        const resultBuffer = writeBitsToBuffer(readBuffer, byteIndex, newBits);
+        logBits(origin, resultBuffer);
+  
+        const result = await client.writeBufferRegister(register, resultBuffer);
+        origin.trace('Output', result);
+      } catch (error) {
+        origin.error('Error reading current value', error);
+        return;
+      }
+    };
+  */
+  setWorkmodeAndZeroExportPower = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const workmodes = [
       { id: 'selling_first', value: 0 },
       {
@@ -211,7 +206,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     }
   };
 
-  setGridPeakShavingOn = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setGridPeakShavingOn = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const modeRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 178);
     const powerRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 191);
 
@@ -245,7 +240,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     }
   };
 
-  setGridPeakShavingOff = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setGridPeakShavingOff = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const modeRegister = this.getRegisterByTypeAndAddress(RegisterType.Holding, 178);
 
     if (!modeRegister) {
@@ -266,7 +261,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     }
   };
 
-  setTimeOfUseEnabled = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setTimeOfUseEnabled = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const register = this.getRegisterByTypeAndAddress(RegisterType.Holding, 146);
 
     if (register === undefined) {
@@ -286,7 +281,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     }
   };
 
-  setTimeOfUseDayEnabled = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setTimeOfUseDayEnabled = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const register = this.getRegisterByTypeAndAddress(RegisterType.Holding, 146);
 
     if (register === undefined) {
@@ -311,7 +306,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     }
   };
 
-  setTimeOfUseTimeslotParametersStart = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setTimeOfUseTimeslotParametersStart = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const randomTimeout = Math.floor(Math.random() * 600);
 
     return new Promise((resolve) => {
@@ -319,7 +314,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     });
   };
 
-  setAllTimeslotParameters = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setAllTimeslotParameters = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const { gridcharge, generatorcharge, powerlimit, batterycharge } = args;
 
     const powerLimitNumber = Number(powerlimit);
@@ -368,7 +363,7 @@ export class DeyeSunXKSG01HP3 extends ModbusDevice {
     }
   };
 
-  setTimeOfUseTimeslotParameters = async (origin: Logger, args: any, client: IAPI): Promise<void> => {
+  setTimeOfUseTimeslotParameters = async (origin: Logger, args: any, client: IAPI2): Promise<void> => {
     const { timeslot, time, gridcharge, generatorcharge, powerlimit, batterycharge } = args;
 
     const timeslotNumber = Number(timeslot);
